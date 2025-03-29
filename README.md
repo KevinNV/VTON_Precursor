@@ -32,9 +32,9 @@ Please download the following pretrained models manually before running the note
 
 After downloading, upload the `.pth` files into your models folder as follows: -
 project/
-├── models/                 # Folder containing SCHP model weights (.pth)
-├── networks/               # Contains AugmentCE2P.py
-├── img1.jpg                # Sample images for inference
+├── models/                 # Folder containing SCHP model weights (.pth)<br>
+├── networks/               # Contains AugmentCE2P.py<br>
+├── img1.jpg                # Sample images for inference<br>
 
 
 SCHP Repo: https://github.com/GoGoDuck912/Self-Correction-Human-Parsing
