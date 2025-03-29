@@ -10,7 +10,6 @@ import cv2
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import sys
 import torchvision.transforms as T
 from PIL import Image
 from collections import OrderedDict
