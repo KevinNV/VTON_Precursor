@@ -30,8 +30,8 @@ Please download the following pretrained models manually before running the note
 - **Pascal-Person-Part Model**  
   [Download Pascal Model](https://drive.google.com/file/d/1E5YwNKW2VOEayK9mWCS3Kpsxf-3z04ZE/view?usp=sharing)
 
-After downloading, upload the `.pth` files into your models folder as follows: -
-project/
+After downloading, upload the `.pth` files into your models folder as follows: -<br>
+project/<br>
 ├── models/                 # Folder containing SCHP model weights (.pth)<br>
 ├── networks/               # Contains AugmentCE2P.py<br>
 ├── img1.jpg                # Sample images for inference<br>
