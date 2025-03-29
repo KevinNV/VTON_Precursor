@@ -233,7 +233,7 @@ demo = gr.Interface(
     ],
     outputs=gr.Image(type="pil", label="Masked Output"),
     title="Garment Overlay Mask Generator",
-    description="Uploads a person and garment image to generate a garment area mask on the person image"
+    description="Upload a person and garment image to generate a garment area mask on the person image"
 )
 
 if __name__ == "__main__":
