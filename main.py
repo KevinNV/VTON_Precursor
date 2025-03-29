@@ -213,12 +213,12 @@ if __name__ == "__main__":
     lip_model = load_schp_model('models/exp-schp-201908261155-lip.pth', dataset='lip')
     pascal_model = load_schp_model('models/exp-schp-201908270938-pascal-person-part.pth', dataset='pascal')
 
-    garment_img = cv2.imread('img3.jpg')
+    garment_img = cv2.imread('img18.jpg')
     garment_map = schp_infer(lip_model, garment_img, dataset='lip')
     garment_cat = deduce_garment_category_lip(garment_map)
     #print("Garment category:", garment_cat)
 
-    person_img = cv2.imread('img7.jpg')
+    person_img = cv2.imread('img17.jpg')
     person_lip_map = schp_infer(lip_model, person_img, dataset='lip')
     person_lip_map = correct_body_confusion_kmeans(person_img, person_lip_map)
     #print(np.unique(person_lip_map))
