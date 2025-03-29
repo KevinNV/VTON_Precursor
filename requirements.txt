@@ -10,3 +10,4 @@ fastapi==0.112.2
 gradio==4.43.0
 pydantic==2.6.1
 pydantic_core==2.16.2
+ninja==1.11.1.4
