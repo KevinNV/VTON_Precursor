@@ -136,11 +136,11 @@ def correct_body_confusion_kmeans(person_img, parsing_map):
                 sim_scores.append(color_similarity(gc, bc))
 
         avg_sim = np.mean(sim_scores)
-        print(f"Avg color diff ({garment_label} vs {body_labels}):", round(avg_sim, 2))
+        #print(f"Avg color diff ({garment_label} vs {body_labels}):", round(avg_sim, 2))
 
         # Example threshold: if they're very different => reassign body->garment
         if avg_sim > 50:
-            print(f"Heuristic: Reassigning {body_labels} to {garment_label}")
+            #print(f"Heuristic: Reassigning {body_labels} to {garment_label}")
             for lbl in body_labels:
                 corrected[corrected == lbl] = garment_label
 
@@ -193,7 +193,7 @@ def fill_pascal_regions_with_overlap(pascal_map, coverage_mask, person_lip_map, 
             shoes_overlap = np.logical_and(shoe_mask, coverage_mask > 0).sum()
             shoe_ratio = shoes_overlap / part_mask.sum()
             if shoe_ratio < 0.1:  # Only fill if at least 10% of the region has shoe pixels
-                print(f"Skipping Lower Legs (6) because LIP-shoe overlap is too low: {shoe_ratio:.2f}")
+                #print(f"Skipping Lower Legs (6) because LIP-shoe overlap is too low: {shoe_ratio:.2f}")
                 continue
             
         if lbl == 4:  # Lower Arms
@@ -201,7 +201,7 @@ def fill_pascal_regions_with_overlap(pascal_map, coverage_mask, person_lip_map, 
             gloves_on_arm = np.logical_and(glove_mask, coverage_mask > 0).sum()
             glove_ratio = gloves_on_arm / part_mask.sum()
             if glove_ratio < 0.1:
-                print("Skipping Lower Arms (4) because no gloves were detected by LIP")
+                #print("Skipping Lower Arms (4) because no gloves were detected by LIP")
                 continue
 
         filled[part_mask > 0] = 255
@@ -216,7 +216,7 @@ if __name__ == "__main__":
     garment_img = cv2.imread('img3.jpg')
     garment_map = schp_infer(lip_model, garment_img, dataset='lip')
     garment_cat = deduce_garment_category_lip(garment_map)
-    print("Garment category:", garment_cat)
+    #print("Garment category:", garment_cat)
 
     person_img = cv2.imread('img7.jpg')
     person_lip_map = schp_infer(lip_model, person_img, dataset='lip')
