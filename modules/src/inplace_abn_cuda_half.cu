@@ -1,68 +1,54 @@
 #include <ATen/ATen.h>
-
 #include <cuda_fp16.h>
-
 #include <vector>
-
 #include "utils/checks.h"
 #include "utils/cuda.cuh"
 #include "inplace_abn.h"
-
 #include <ATen/cuda/CUDAContext.h>
 
-// Operations for reduce
+// ------------------- DEVICE STRUCTS ------------------- //
+
 struct SumOpH {
-  __device__ SumOpH(const half *t, int c, int s)
-      : tensor(t), chn(c), sp(s) {}
+  __device__ SumOpH(const half *t, int c, int s) : tensor(t), chn(c), sp(s) {}
   __device__ __forceinline__ float operator()(int batch, int plane, int n) {
     return __half2float(tensor[(batch * chn + plane) * sp + n]);
   }
   const half *tensor;
-  const int chn;
-  const int sp;
+  const int chn, sp;
 };
 
 struct VarOpH {
-  __device__ VarOpH(float m, const half *t, int c, int s)
-      : mean(m), tensor(t), chn(c), sp(s) {}
+  __device__ VarOpH(float m, const half *t, int c, int s) : mean(m), tensor(t), chn(c), sp(s) {}
   __device__ __forceinline__ float operator()(int batch, int plane, int n) {
-    const auto t = __half2float(tensor[(batch * chn + plane) * sp + n]);
+    float t = __half2float(tensor[(batch * chn + plane) * sp + n]);
     return (t - mean) * (t - mean);
   }
   const float mean;
   const half *tensor;
-  const int chn;
-  const int sp;
+  const int chn, sp;
 };
 
 struct GradOpH {
-  __device__ GradOpH(float _weight, float _bias, const half *_z, const half *_dz, int c, int s)
-      : weight(_weight), bias(_bias), z(_z), dz(_dz), chn(c), sp(s) {}
+  __device__ GradOpH(float weight, float bias, const half *z, const half *dz, int c, int s)
+      : weight(weight), bias(bias), z(z), dz(dz), chn(c), sp(s) {}
   __device__ __forceinline__ Pair<float> operator()(int batch, int plane, int n) {
     float _y = (__half2float(z[(batch * chn + plane) * sp + n]) - bias) / weight;
     float _dz = __half2float(dz[(batch * chn + plane) * sp + n]);
     return Pair<float>(_dz, _y * _dz);
   }
-  const float weight;
-  const float bias;
-  const half *z;
-  const half *dz;
-  const int chn;
-  const int sp;
+  const float weight, bias;
+  const half *z, *dz;
+  const int chn, sp;
 };
 
-/***********
- * mean_var
- ***********/
+// ------------------- MEAN VAR ------------------- //
 
 __global__ void mean_var_kernel_h(const half *x, float *mean, float *var, int num, int chn, int sp) {
   int plane = blockIdx.x;
   float norm = 1.f / static_cast<float>(num * sp);
-
   float _mean = reduce<float, SumOpH>(SumOpH(x, chn, sp), plane, num, sp) * norm;
   __syncthreads();
   float _var = reduce<float, VarOpH>(VarOpH(_mean, x, chn, sp), plane, num, sp) * norm;
-
   if (threadIdx.x == 0) {
     mean[plane] = _mean;
     var[plane] = _var;
@@ -71,41 +57,29 @@ __global__ void mean_var_kernel_h(const half *x, float *mean, float *var, int nu
 
 std::vector<at::Tensor> mean_var_cuda_h(at::Tensor x) {
   CHECK_CUDA_INPUT(x);
-
-  // Extract dimensions
   int64_t num, chn, sp;
   get_dims(x, num, chn, sp);
-
-  // Prepare output tensors
-  auto mean = at::empty({chn},x.options().dtype(at::kFloat));
-  auto var = at::empty({chn},x.options().dtype(at::kFloat));
-
-  // Run kernel
-  dim3 blocks(chn);
-  dim3 threads(getNumThreads(sp));
+  auto mean = at::empty({chn}, x.options().dtype(at::kFloat));
+  auto var = at::empty({chn}, x.options().dtype(at::kFloat));
+  dim3 blocks(chn), threads(getNumThreads(sp));
   auto stream = at::cuda::getCurrentCUDAStream();
   mean_var_kernel_h<<<blocks, threads, 0, stream>>>(
-      reinterpret_cast<half*>(x.data<at::Half>()),
-      mean.data<float>(),
-      var.data<float>(),
+      reinterpret_cast<const half*>(x.data_ptr<at::Half>()),
+      mean.data_ptr<float>(),
+      var.data_ptr<float>(),
       num, chn, sp);
-
   return {mean, var};
 }
 
-/**********
- * forward
- **********/
+// ------------------- FORWARD ------------------- //
 
 __global__ void forward_kernel_h(half *x, const float *mean, const float *var, const float *weight, const float *bias,
                                  bool affine, float eps, int num, int chn, int sp) {
   int plane = blockIdx.x;
-
   const float _mean = mean[plane];
   const float _var = var[plane];
   const float _weight = affine ? abs(weight[plane]) + eps : 1.f;
   const float _bias = affine ? bias[plane] : 0.f;
-
   const float mul = rsqrt(_var + eps) * _weight;
 
   for (int batch = 0; batch < num; ++batch) {
@@ -113,41 +87,56 @@ __global__ void forward_kernel_h(half *x, const float *mean, const float *var, c
       half *x_ptr = x + (batch * chn + plane) * sp + n;
       float _x = __half2float(*x_ptr);
       float _y = (_x - _mean) * mul + _bias;
-
       *x_ptr = __float2half(_y);
     }
   }
 }
 
 at::Tensor forward_cuda_h(at::Tensor x, at::Tensor mean, at::Tensor var, at::Tensor weight, at::Tensor bias,
-                        bool affine, float eps) {
-  CHECK_CUDA_INPUT(x);
-  CHECK_CUDA_INPUT(mean);
-  CHECK_CUDA_INPUT(var);
-  CHECK_CUDA_INPUT(weight);
-  CHECK_CUDA_INPUT(bias);
-
-  // Extract dimensions
+                          bool affine, float eps) {
+  CHECK_CUDA_INPUT(x); CHECK_CUDA_INPUT(mean); CHECK_CUDA_INPUT(var);
+  CHECK_CUDA_INPUT(weight); CHECK_CUDA_INPUT(bias);
   int64_t num, chn, sp;
   get_dims(x, num, chn, sp);
-
-  // Run kernel
-  dim3 blocks(chn);
-  dim3 threads(getNumThreads(sp));
+  dim3 blocks(chn), threads(getNumThreads(sp));
   auto stream = at::cuda::getCurrentCUDAStream();
   forward_kernel_h<<<blocks, threads, 0, stream>>>(
-      reinterpret_cast<half*>(x.data<at::Half>()),
-      mean.data<float>(),
-      var.data<float>(),
-      weight.data<float>(),
-      bias.data<float>(),
+      reinterpret_cast<half*>(x.data_ptr<at::Half>()),
+      mean.data_ptr<float>(), var.data_ptr<float>(),
+      weight.data_ptr<float>(), bias.data_ptr<float>(),
       affine, eps, num, chn, sp);
-
   return x;
 }
 
+// ------------------- LEAKY RELU BACKWARD ------------------- //
+
+__global__ void leaky_relu_backward_impl_h(half *z, half *dz, float slope, int64_t count) {
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < count; i += blockDim.x * gridDim.x) {
+    float _z = __half2float(z[i]);
+    if (_z < 0.0f) {
+      dz[i] = __float2half(__half2float(dz[i]) * slope);
+      z[i] = __float2half(_z / slope);
+    }
+  }
+}
+
+void leaky_relu_backward_cuda_h(at::Tensor z, at::Tensor dz, float slope) {
+  CHECK_CUDA_INPUT(z);
+  CHECK_CUDA_INPUT(dz);
+
+  int64_t count = z.numel();
+  dim3 threads(getNumThreads(count));
+  dim3 blocks((count + threads.x - 1) / threads.x);
+  auto stream = at::cuda::getCurrentCUDAStream();
+
+  leaky_relu_backward_impl_h<<<blocks, threads, 0, stream>>>(
+      reinterpret_cast<half*>(z.data_ptr<at::Half>()),
+      reinterpret_cast<half*>(dz.data_ptr<at::Half>()),
+      slope, count);
+}
+
 __global__ void edz_eydz_kernel_h(const half *z, const half *dz, const float *weight, const float *bias,
-                                float *edz, float *eydz, bool affine, float eps, int num, int chn, int sp) {
+                                  float *edz, float *eydz, bool affine, float eps, int num, int chn, int sp) {
   int plane = blockIdx.x;
 
   float _weight = affine ? abs(weight[plane]) + eps : 1.f;
@@ -163,37 +152,40 @@ __global__ void edz_eydz_kernel_h(const half *z, const half *dz, const float *we
 }
 
 std::vector<at::Tensor> edz_eydz_cuda_h(at::Tensor z, at::Tensor dz, at::Tensor weight, at::Tensor bias,
-                                      bool affine, float eps) {
+                                        bool affine, float eps) {
   CHECK_CUDA_INPUT(z);
   CHECK_CUDA_INPUT(dz);
   CHECK_CUDA_INPUT(weight);
   CHECK_CUDA_INPUT(bias);
 
-  // Extract dimensions
   int64_t num, chn, sp;
   get_dims(z, num, chn, sp);
 
-  auto edz = at::empty({chn},z.options().dtype(at::kFloat));
-  auto eydz = at::empty({chn},z.options().dtype(at::kFloat));
+  auto edz = at::empty({chn}, z.options().dtype(at::kFloat));
+  auto eydz = at::empty({chn}, z.options().dtype(at::kFloat));
 
-  // Run kernel
   dim3 blocks(chn);
   dim3 threads(getNumThreads(sp));
   auto stream = at::cuda::getCurrentCUDAStream();
+
   edz_eydz_kernel_h<<<blocks, threads, 0, stream>>>(
-        reinterpret_cast<half*>(z.data<at::Half>()),
-        reinterpret_cast<half*>(dz.data<at::Half>()),
-        weight.data<float>(),
-        bias.data<float>(),
-        edz.data<float>(),
-        eydz.data<float>(),
-        affine, eps, num, chn, sp);
- 
+      reinterpret_cast<const half*>(z.data_ptr<at::Half>()),
+      reinterpret_cast<const half*>(dz.data_ptr<at::Half>()),
+      weight.data_ptr<float>(),
+      bias.data_ptr<float>(),
+      edz.data_ptr<float>(),
+      eydz.data_ptr<float>(),
+      affine, eps, num, chn, sp
+  );
+
   return {edz, eydz};
 }
 
-__global__ void backward_kernel_h(const half *z, const half *dz, const float *var, const float *weight, const float *bias, const float *edz,
-                                  const float *eydz, half *dx, bool affine, float eps, int num, int chn, int sp) {
+__global__ void backward_kernel_h(const half *z, const half *dz, const float *var,
+                                  const float *weight, const float *bias,
+                                  const float *edz, const float *eydz,
+                                  half *dx, bool affine, float eps,
+                                  int num, int chn, int sp) {
   int plane = blockIdx.x;
 
   float _weight = affine ? abs(weight[plane]) + eps : 1.f;
@@ -207,16 +199,19 @@ __global__ void backward_kernel_h(const half *z, const half *dz, const float *va
 
   for (int batch = 0; batch < num; ++batch) {
     for (int n = threadIdx.x; n < sp; n += blockDim.x) {
-      float _dz = __half2float(dz[(batch * chn + plane) * sp + n]);
-      float _y = (__half2float(z[(batch * chn + plane) * sp + n]) - _bias) / _weight;
+      int idx = (batch * chn + plane) * sp + n;
 
-      dx[(batch * chn + plane) * sp + n] = __float2half((_dz - _edz / count - _y * _eydz / count) * _mul);
+      float _dz = __half2float(dz[idx]);
+      float _y = (__half2float(z[idx]) - _bias) / _weight;
+
+      float _dx = (_dz - _edz / count - _y * _eydz / count) * _mul;
+      dx[idx] = __float2half(_dx);
     }
   }
 }
 
 at::Tensor backward_cuda_h(at::Tensor z, at::Tensor dz, at::Tensor var, at::Tensor weight, at::Tensor bias,
-                                      at::Tensor edz, at::Tensor eydz, bool affine, float eps) {
+                           at::Tensor edz, at::Tensor eydz, bool affine, float eps) {
   CHECK_CUDA_INPUT(z);
   CHECK_CUDA_INPUT(dz);
   CHECK_CUDA_INPUT(var);
@@ -225,51 +220,28 @@ at::Tensor backward_cuda_h(at::Tensor z, at::Tensor dz, at::Tensor var, at::Tens
   CHECK_CUDA_INPUT(edz);
   CHECK_CUDA_INPUT(eydz);
 
-  // Extract dimensions
   int64_t num, chn, sp;
   get_dims(z, num, chn, sp);
 
-  auto dx = at::zeros_like(z);
+  auto dx = at::empty_like(z);
 
-  // Run kernel
   dim3 blocks(chn);
   dim3 threads(getNumThreads(sp));
   auto stream = at::cuda::getCurrentCUDAStream();
+
   backward_kernel_h<<<blocks, threads, 0, stream>>>(
-        reinterpret_cast<half*>(z.data<at::Half>()),
-        reinterpret_cast<half*>(dz.data<at::Half>()),
-        var.data<float>(),
-        weight.data<float>(),
-        bias.data<float>(),
-        edz.data<float>(),
-        eydz.data<float>(),
-        reinterpret_cast<half*>(dx.data<at::Half>()),
-        affine, eps, num, chn, sp);
+      reinterpret_cast<const half*>(z.data_ptr<at::Half>()),
+      reinterpret_cast<const half*>(dz.data_ptr<at::Half>()),
+      var.data_ptr<float>(),
+      weight.data_ptr<float>(),
+      bias.data_ptr<float>(),
+      edz.data_ptr<float>(),
+      eydz.data_ptr<float>(),
+      reinterpret_cast<half*>(dx.data_ptr<at::Half>()),
+      affine, eps, num, chn, sp
+  );
 
   return dx;
 }
 
-__global__ void leaky_relu_backward_impl_h(half *z, half *dz, float slope, int64_t count) {
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < count;  i += blockDim.x * gridDim.x){
-    float _z = __half2float(z[i]);
-    if (_z < 0) {
-      dz[i] = __float2half(__half2float(dz[i]) * slope);
-      z[i] = __float2half(_z / slope);
-    }
-  }
-}
-
-void leaky_relu_backward_cuda_h(at::Tensor z, at::Tensor dz, float slope) {
-  CHECK_CUDA_INPUT(z);
-  CHECK_CUDA_INPUT(dz);
-
-  int64_t count = z.numel();
-  dim3 threads(getNumThreads(count));
-  dim3 blocks = (count + threads.x - 1) / threads.x;
-  auto stream = at::cuda::getCurrentCUDAStream();
-  leaky_relu_backward_impl_h<<<blocks, threads, 0, stream>>>(
-      reinterpret_cast<half*>(z.data<at::Half>()),
-      reinterpret_cast<half*>(dz.data<at::Half>()),
-      slope, count);
-}
 

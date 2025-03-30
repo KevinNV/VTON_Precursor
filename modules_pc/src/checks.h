@@ -7,14 +7,9 @@
 #define AT_CHECK AT_ASSERT
 #endif
 
-// Device type checks
-#define CHECK_CUDA(x) AT_CHECK((x).is_cuda(), #x " must be a CUDA tensor")
-#define CHECK_CPU(x)  AT_CHECK(!(x).is_cuda(), #x " must be a CPU tensor")
-
-// Contiguity check
+#define CHECK_CUDA(x) AT_CHECK((x).type().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CPU(x) AT_CHECK(!(x).type().is_cuda(), #x " must be a CPU tensor")
 #define CHECK_CONTIGUOUS(x) AT_CHECK((x).is_contiguous(), #x " must be contiguous")
 
-// Combined checks
 #define CHECK_CUDA_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
-#define CHECK_CPU_INPUT(x)  CHECK_CPU(x);  CHECK_CONTIGUOUS(x)
-
+#define CHECK_CPU_INPUT(x) CHECK_CPU(x); CHECK_CONTIGUOUS(x)
