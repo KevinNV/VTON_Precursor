@@ -34,7 +34,7 @@ After downloading, upload the `.pth` files into your models folder as follows: -
 project/<br>
 ├── models/<br>
 ├── networks/<br>
-├── main.py<br>
+├── app.py<br>
 ├── transforms.py<br>
 ├── img1.jpg<br>
 <br>
