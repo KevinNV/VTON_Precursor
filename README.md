@@ -19,10 +19,35 @@ This system can serve as a pre-processing step for virtual try-on, fashion image
 - The person in the image is standing upright, with a clear and uncluttered background.
 - The garment image also features a clean and unobstructed background.
 
+## 🚀 Running on Google Colab (Recommended)
 
-### Required Model Files
+You can directly run the SCHP model on Google Colab using the link below:
 
-Please download the following pretrained models manually before running the notebook:
+👉 [Open in Google Colab](https://colab.research.google.com/drive/15dF6G6IptncxgaaBERPM8w3hbk5aasgQ?usp=drive_link)
+
+The Colab setup automatically handles:
+- Model loading
+- Module compilation
+- Gradio UI for demo
+
+✅ **No need to install dependencies or rename folders manually**.  
+🛠️ *P.S. If Colab asks to restart the runtime after a `pip install`, allow it — the notebook will still work smoothly afterward.*
+
+---
+
+## 💻 Running Locally (PC/Laptop)
+
+If you prefer to run the project locally:
+
+1. **Folder Renaming:**
+   - Rename the folder `modules_pc` to `modules`
+   - Ignore or delete the existing `modules` folder (used only for Colab)
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+
+Please download the following pretrained models manually before running the python file:
 
 - **SCHP (LIP dataset) Model**  
   [Download SCHP Model](https://drive.google.com/file/d/1k4dllHpu0bdx38J7H28rVVLpU-kOHmnH/view?usp=sharing)
