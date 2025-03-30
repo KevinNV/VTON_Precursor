@@ -30,8 +30,8 @@ The Colab setup automatically handles:
 - Module compilation
 - Gradio UI for demo
 
-✅ **No need to install dependencies or rename folders manually**.  
-🛠️ *P.S. If Colab asks to restart the runtime after a `pip install`, allow it — the notebook will still work smoothly afterward.*
+**No need to install dependencies or rename folders manually**.  
+*P.S. If Colab asks to restart the runtime after a `pip install`, allow it — the notebook will still work smoothly afterward.*
 
 ---
 
